@@ -1,0 +1,159 @@
+name: Build and Release Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install pandas
+        pip install cryptography
+    
+    - name: Build EXE with PyInstaller
+      run: |
+        pyinstaller --onefile --windowed --name="CSV-LinkedIn-Matcher" --icon="icon.ico" --add-data="*.py;." --hidden-import="cryptography" --hidden-import="pandas" --hidden-import="tkinter" main.py
+      continue-on-error: true
+    
+    - name: Build EXE with PyInstaller (fallback without icon)
+      if: failure()
+      run: |
+        pyinstaller --onefile --windowed --name="CSV-LinkedIn-Matcher" --add-data="*.py;." --hidden-import="cryptography" --hidden-import="pandas" --hidden-import="tkinter" main.py
+    
+    - name: Create Release Package
+      run: |
+        mkdir release-package
+        copy dist\CSV-LinkedIn-Matcher.exe release-package\
+        echo "CSV LinkedIn URL Matcher" > release-package\README.txt
+        echo "=========================" >> release-package\README.txt
+        echo "" >> release-package\README.txt
+        echo "How to use:" >> release-package\README.txt
+        echo "1. Run CSV-LinkedIn-Matcher.exe" >> release-package\README.txt
+        echo "2. Enter your license key when prompted" >> release-package\README.txt
+        echo "3. Select your CSV files" >> release-package\README.txt
+        echo "4. Click 'Match URLs' to process" >> release-package\README.txt
+        echo "" >> release-package\README.txt
+        echo "Requirements:" >> release-package\README.txt
+        echo "- Windows 10 or later" >> release-package\README.txt
+        echo "- Valid license key" >> release-package\README.txt
+        
+    - name: Zip Release Package
+      run: |
+        Compress-Archive -Path release-package\* -DestinationPath CSV-LinkedIn-Matcher-Windows.zip
+    
+    - name: Get version from tag
+      id: get_version
+      run: |
+        echo "VERSION=${GITHUB_REF#refs/tags/}" >> $env:GITHUB_OUTPUT
+      shell: bash
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## CSV LinkedIn URL Matcher - ${{ steps.get_version.outputs.VERSION }}
+          
+          ### What's New
+          - Licensed version with time-based activation
+          - Support for minute, hour, day, week, month, and year licenses
+          - Machine binding option for enhanced security
+          
+          ### Installation
+          1. Download `CSV-LinkedIn-Matcher-Windows.zip`
+          2. Extract the zip file
+          3. Run `CSV-LinkedIn-Matcher.exe`
+          4. Enter your license key when prompted
+          
+          ### System Requirements
+          - Windows 10 or later (64-bit)
+          - No Python installation required
+          
+          ### Features
+          - Match LinkedIn URLs between two CSV files
+          - User-friendly GUI interface
+          - Progress tracking
+          - Export matched results to CSV
+          
+          ### Support
+          For license keys or support, please contact the administrator.
+        draft: false
+        prerelease: false
+    
+    - name: Upload Windows EXE
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./CSV-LinkedIn-Matcher-Windows.zip
+        asset_name: CSV-LinkedIn-Matcher-Windows.zip
+        asset_content_type: application/zip
+    
+    - name: Upload standalone EXE
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/CSV-LinkedIn-Matcher.exe
+        asset_name: CSV-LinkedIn-Matcher.exe
+        asset_content_type: application/octet-stream
+
+  build-keygen:
+    runs-on: windows-latest
+    needs: build-windows
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+    
+    - name: Build KeyGen EXE
+      run: |
+        pyinstaller --onefile --windowed --name="CSV-Matcher-KeyGen" --hidden-import="tkinter" keygen.py
+    
+    - name: Get Release
+      id: get_release
+      uses: bruceadams/get-release@v1.3.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload KeyGen EXE
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.get_release.outputs.upload_url }}
+        asset_path: ./dist/CSV-Matcher-KeyGen.exe
+        asset_name: CSV-Matcher-KeyGen.exe
+        asset_content_type: application/octet-stream
