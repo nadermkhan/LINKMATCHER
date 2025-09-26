@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
 
 jobs:
   build-and-release:
@@ -56,7 +61,22 @@ jobs:
         
         Compress-Archive -Path release-package\* -DestinationPath CSV-LinkedIn-Matcher-Windows.zip
     
-    - name: Create Release
+    - name: Get version info
+      id: version
+      run: |
+        if ("${{ github.ref }}" -match "refs/tags/(.+)") {
+          $version = $matches[1]
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "RELEASE_NAME=Release $version" >> $env:GITHUB_OUTPUT
+        } else {
+          $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+          $version = "manual-${{ github.event.inputs.version || '1.0.0' }}-$timestamp"
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "RELEASE_NAME=Manual Build ${{ github.event.inputs.version || '1.0.0' }} ($timestamp)" >> $env:GITHUB_OUTPUT
+        }
+      shell: powershell
+    
+    - name: Create Release (for tags)
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
@@ -102,11 +122,55 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Upload Artifacts (for manual builds)
+    - name: Create Release (for manual trigger)
+      uses: softprops/action-gh-release@v1
       if: github.event_name == 'workflow_dispatch'
+      with:
+        tag_name: ${{ steps.version.outputs.VERSION }}
+        name: ${{ steps.version.outputs.RELEASE_NAME }}
+        files: |
+          CSV-LinkedIn-Matcher-Windows.zip
+          dist/CSV-LinkedIn-Matcher.exe
+        body: |
+          ## CSV LinkedIn URL Matcher - Manual Build
+          
+          **Build Type**: Manual trigger
+          **Version**: ${{ github.event.inputs.version || '1.0.0' }}
+          **Build Date**: ${{ github.run_started_at }}
+          
+          ### Downloads
+          - **Full Package (Recommended)**: `CSV-LinkedIn-Matcher-Windows.zip` - Includes EXE and documentation
+          - **EXE Only**: `CSV-LinkedIn-Matcher.exe` - Standalone executable
+          
+          ### Features
+          - Match LinkedIn URLs between two CSV files
+          - Licensed application with time-based activation
+          - User-friendly GUI interface
+          - Progress tracking and status updates
+          - Export matched results to CSV
+          
+          ### Installation
+          1. Download `CSV-LinkedIn-Matcher-Windows.zip`
+          2. Extract the zip file to your desired location
+          3. Run `CSV-LinkedIn-Matcher.exe`
+          4. Enter your license key when prompted
+          
+          ### System Requirements
+          - Windows 10 or later (64-bit recommended)
+          - No Python installation required
+          - Approximately 50MB free disk space
+          
+          ### Note
+          This is a manual build and may be a development version. For stable releases, please use tagged versions.
+        draft: false
+        prerelease: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: windows-executable
+        name: CSV-LinkedIn-Matcher-${{ steps.version.outputs.VERSION }}
         path: |
           dist/CSV-LinkedIn-Matcher.exe
           CSV-LinkedIn-Matcher-Windows.zip
